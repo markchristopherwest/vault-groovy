@@ -1,0 +1,58 @@
+# docker-compose.yaml
+version: '3.9'
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    privileged: true
+    user: root
+    ports:
+     - 8080:8080
+     - 50000:50000
+    container_name: jenkins
+    volumes:
+     - ./../jenkins_home:/var/jenkins_home
+     - /var/run/docker.sock:/var/run/docker.sock
+  jenkins_agent:
+    image: jenkins/ssh-agent:latest
+    privileged: true
+    user: root
+    container_name: jenkins-agent
+    expose:
+      - 22
+    environment:
+      - JENKINS_AGENT_SSH_PUBKEY=$JENKINS_AGENT_SSH_PUBKEY
+    entrypoint: [ "sh", "-c", "apt-get update && apt-get install -y curl wget jq"] 
+  vault:
+    ports:
+      - "8200:8200"
+      - "8201:8201"
+    image: "hashicorp/vault:latest"
+    cap_add:
+      - IPC_LOCK
+    container_name: vault
+    environment:
+      - 'VAULT_ADDR=http://127.0.0.1:8200'
+      - 'VAULT_DEV_ROOT_TOKEN_ID=root'
+      - 'VAULT_SKIP_VERIFY=true'
+    volumes:
+      - type: bind
+        source: ./../config/vault.hcl
+        target: /opt/vault/config/vault.hcl
+    entrypoint: [ "sh", "-c", "vault server -config /opt/vault/config/vault.hcl -log-level=trace"] 
+  vaultsetup:
+    container_name: vault-setup
+    expose:
+      - "8200"
+    image: "ubuntu:22.04"
+    depends_on:
+      - vault
+    # restart: "no"
+    network_mode: "bridge"
+    entrypoint: [ "sh", "-c", "/sensitive/helper.sh"] 
+    volumes:
+      - type: bind
+        source: ./../terraform
+        target: /terraform
+      - type: bind
+        source: ./../sensitive
+        target: /sensitive
